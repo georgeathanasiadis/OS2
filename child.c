@@ -9,47 +9,30 @@
 #include <time.h>
 #include "ipc_utils.h"
 
-struct timespec start_time, end_time;
-
 SharedMemory *shared_mem;
-int message_count = 0;
-//time_t start_time, end_time;
-
-// Signal handler for termination
-// void handle_termination(int sig) {
-//     time(&end_time);
-//     double active_duration = difftime(end_time, start_time);
-
-//     printf("Child process exiting.\n");
-//     printf("Messages received: %d\n", message_count);
-//     printf("Active duration: %.2f seconds\n", active_duration);
-
-//     munmap(shared_mem, sizeof(SharedMemory));
-//     exit(0);
-// }
+int message_count = 0;  // Tracks number of messages received
+int start_cycle = 0;    // Cycle when the child was activated
+int current_cycle = 0;  // Tracks the current cycle based on parent updates
 
 void handle_termination(int sig) {
-    clock_gettime(CLOCK_MONOTONIC, &end_time);
-    double active_duration = (end_time.tv_sec - start_time.tv_sec) +
-                             (end_time.tv_nsec - start_time.tv_nsec) / 1e9;
-
     printf("Child process exiting.\n");
     printf("Messages received: %d\n", message_count);
-    printf("Active duration: %.6f seconds\n", active_duration);
+    printf("Total active cycles: %d\n", current_cycle - start_cycle); // Correctly calculate active cycles
 
     munmap(shared_mem, sizeof(SharedMemory));
     exit(0);
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s <child_label> <semaphore_index>\n", argv[0]);
+    if (argc != 4) { // Expecting activation cycle as an additional argument
+        fprintf(stderr, "Usage: %s <child_label> <semaphore_index> <start_cycle>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-    clock_gettime(CLOCK_MONOTONIC, &start_time);
 
     const char *child_label = argv[1];       // Get the child label (e.g., "C1")
     int semaphore_index = atoi(argv[2]);    // Get the semaphore index
+    start_cycle = atoi(argv[3]);            // Activation cycle passed from the parent
+    current_cycle = start_cycle;            // Initialize current cycle to start cycle
 
     // Attach to shared memory
     int shm_fd = shm_open(SHM_NAME, O_RDWR, 0666);
@@ -65,16 +48,35 @@ int main(int argc, char *argv[]) {
     }
 
     signal(SIGTERM, handle_termination);
-    time(&start_time);
 
-    while (1) {
-        sem_wait(&shared_mem->sem_children[semaphore_index]); // Wait on specific semaphore
-        printf("[%s] Received message: %s", child_label, shared_mem->message);
+while (1) {
+    // Increment the current cycle on each iteration
+    current_cycle++;
 
-        message_count++;
+    if (sem_trywait(&shared_mem->sem_children[semaphore_index]) == 0) {
+        // Parse the parent's current cycle and task message
+        char task_message[MAX_LINE_LENGTH] = {0};
+        int parent_cycle = 0;
+
+        if (sscanf(shared_mem->message, "%d|%[^\n]", &parent_cycle, task_message) == 2) {
+            // Synchronize the child's current cycle with the parent's cycle
+            current_cycle = parent_cycle;
+
+            // Print the received task message
+            printf("--> Received message: %s \n", task_message);
+            message_count++;
+        } else {
+            fprintf(stderr, "[%s] Failed to parse message from shared memory.\n", child_label);
+        }
+
         sem_post(&shared_mem->sem_parent); // Notify the parent
     }
 
-    return 0;
+    // Simulate the passing of one cycle
+    sleep(1);
 }
 
+
+
+    return 0;
+}

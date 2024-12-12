@@ -13,7 +13,7 @@
 #define SHM_NAME "shared_memory"
 #define MAX_LINE_LENGTH 256
 
-#define MAX_CHILDREN 10
+#define MAX_CHILDREN 100000
 
 typedef struct {
     char message[MAX_LINE_LENGTH]; // Message buffer

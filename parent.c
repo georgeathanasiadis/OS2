@@ -8,7 +8,7 @@
 #include "ipc_utils.h"
 #include <time.h> 
 
-#define MAX_CHILDREN 10
+//#define MAX_CHILDREN 10
 
 pid_t child_pids[MAX_CHILDREN] = {0};
 int active_children = 0;
@@ -70,9 +70,7 @@ void terminate_child(int child_index) {
     }
 }
 
-
-
-void spawn_child(int child_index) {
+void spawn_child(int child_index, int current_time) {
     if (active_children >= MAX_CHILDREN) {
         fprintf(stderr, "Maximum number of children reached\n");
         return;
@@ -85,23 +83,27 @@ void spawn_child(int child_index) {
     }
 
     if (pid == 0) {
-        // In child process
         char process_label[10];
-        snprintf(process_label, sizeof(process_label), "C%d", child_index + 1);
         char semaphore_index[10];
-        snprintf(semaphore_index, sizeof(semaphore_index), "%d", child_index); // Pass semaphore index
-        execl("./child", "child", process_label, semaphore_index, NULL);
+        char start_cycle[10];
+        snprintf(process_label, sizeof(process_label), "C%d", child_index + 1);
+        snprintf(semaphore_index, sizeof(semaphore_index), "%d", child_index);
+        snprintf(start_cycle, sizeof(start_cycle), "%d", current_time);
+
+        execl("./child", "child", process_label, semaphore_index, start_cycle, NULL);
+
         perror("Failed to exec child process");
         exit(EXIT_FAILURE);
     }
 
-    // In parent process
     child_pids[child_index] = pid;
     active_child_indices[active_children] = child_index; // Add to active indices
     active_children++;
 
-    printf("Spawning child process [C%d]\n", child_index + 1);
+    printf("Spawning child process [C%d] at cycle %d\n", child_index + 1, current_time);
 }
+
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -171,7 +173,7 @@ int main(int argc, char *argv[]) {
                 int child_index = process_label[1] - '1';
 
                 if (command == 'S') {
-                    spawn_child(child_index);
+                    spawn_child(child_index, current_time);
                 } else if (command == 'T') {
                     terminate_child(child_index);
                 }
@@ -181,20 +183,23 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        // If there are active children, send a random line to a random child
         if (active_children > 0) {
             int random_child_index = active_child_indices[rand() % active_children];
 
-            // Send a random line from the text file
-            strncpy(shared_mem->message, text_lines[rand() % line_count], MAX_LINE_LENGTH);
+            // Pick a random line from the text file
+            int random_line_index = rand() % line_count;
+
+            // Format the message as "cycle|task_message"
+            snprintf(shared_mem->message, MAX_LINE_LENGTH, "%d|%s", current_time, text_lines[random_line_index]);
+
+            // Print debug information
+            printf("Sending message to child [C%d]: %s\n", random_child_index + 1, text_lines[random_line_index]);
 
             // Notify the selected child
-            printf("Sending message to child [C%d]\n", random_child_index + 1);
             sem_post(&shared_mem->sem_children[random_child_index]);
-
-            // Wait for the child to process the message
-            sem_wait(&shared_mem->sem_parent);
+            sem_wait(&shared_mem->sem_parent); // Wait for acknowledgment
         }
+
 
         printf("Active children: ");
         for (int i = 0; i < active_children; i++) {

@@ -44,7 +44,7 @@ void shuffle_active_children() {
 
 void terminate_child(int child_index) {
     if (child_pids[child_index] != 0) {
-        printf("Terminating child process C%d\n", child_index + 1);
+        //printf("Terminating child process C%d\n", child_index + 1);
 
         kill(child_pids[child_index], SIGTERM);
         waitpid(child_pids[child_index], NULL, 0);
@@ -99,6 +99,12 @@ void spawn_child(int child_index) {
     printf("Spawning child process C%d\n", child_index + 1);
 }
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <time.h>
+#include "ipc_utils.h"
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
@@ -141,32 +147,34 @@ int main(int argc, char *argv[]) {
     fclose(text_fp);
 
     char line[256];
-    while (fgets(line, sizeof(line), cmd_fp)) {
-        int timestamp;
-        char process_label[10], command;
+    int current_time = 0; // Simulated time
 
-        if (sscanf(line, "%d %s %c", &timestamp, process_label, &command) != 3) {
-            fprintf(stderr, "Invalid command format: %s\n", line);
-            continue;
+    while (1) {
+        // Process commands scheduled at the current time
+        if (fgets(line, sizeof(line), cmd_fp)) {
+            int timestamp;
+            char process_label[10], command;
+
+            if (sscanf(line, "%d %s %c", &timestamp, process_label, &command) != 3) {
+                fprintf(stderr, "Invalid command format: %s\n", line);
+                continue;
+            }
+
+            if (timestamp == current_time) {
+                int child_index = process_label[1] - '1';
+
+                if (command == 'S') {
+                    spawn_child(child_index);
+                } else if (command == 'T') {
+                    terminate_child(child_index);
+                }
+            } else {
+                // Rewind the line if not for the current time
+                fseek(cmd_fp, -strlen(line), SEEK_CUR);
+            }
         }
 
-        int child_index = process_label[1] - '1';
-
-        if (command == 'S') {
-            spawn_child(child_index);
-        } else if (command == 'T') {
-            terminate_child(child_index);
-        }
-
-
-        printf("Active children: ");
-        for (int i = 0; i < active_children; i++) {
-            printf("C%d ", active_child_indices[i] + 1);
-        }
-        printf("\n");
-
-
-
+        // If there are active children, send a random line to a random child
         if (active_children > 0) {
             int random_child_index = active_child_indices[rand() % active_children];
 
@@ -175,12 +183,27 @@ int main(int argc, char *argv[]) {
 
             // Notify the selected child
             printf("Sending message to child [C%d]\n", random_child_index + 1);
-            sem_post(&shared_mem->sem_children[random_child_index]); // Signal the specific child
+            sem_post(&shared_mem->sem_children[random_child_index]);
 
             // Wait for the child to process the message
             sem_wait(&shared_mem->sem_parent);
         }
 
+        printf("Active children: ");
+        for (int i = 0; i < active_children; i++) {
+            printf("C%d ", active_child_indices[i] + 1);
+        }
+        printf("\n");
+        printf("--------------------------------------------------\n");
+
+        // Simulate time passing
+        sleep(1); // 1 second per cycle
+        current_time++;
+
+        // Break the loop if no active children and no commands remain
+        if (active_children == 0 && feof(cmd_fp)) {
+            break;
+        }
     }
 
     fclose(cmd_fp);
@@ -196,3 +219,4 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+

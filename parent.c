@@ -58,7 +58,7 @@ void terminate_child(int child_index) {
                     active_child_indices[j] = active_child_indices[j + 1];
                 }
                 active_children--;
-                printf("Terminating child process C%d\n", child_index + 1);
+                printf("Terminated child process [C%d]\n", child_index + 1);
 
                 break;
             }
@@ -100,7 +100,7 @@ void spawn_child(int child_index) {
     active_child_indices[active_children] = child_index; // Add to active indices
     active_children++;
 
-    printf("Spawning child process C%d\n", child_index + 1);
+    printf("Spawning child process [C%d]\n", child_index + 1);
 }
 
 #include <stdio.h>
@@ -154,6 +154,9 @@ int main(int argc, char *argv[]) {
     int current_time = 0; // Simulated time
 
     while (1) {
+        printf("\n[Cycle %d]\n", current_time);
+        printf("\n");
+
         // Process commands scheduled at the current time
         if (fgets(line, sizeof(line), cmd_fp)) {
             int timestamp;

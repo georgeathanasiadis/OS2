@@ -64,6 +64,10 @@ void terminate_child(int child_index) {
             }
         }
     }
+    else {
+        // Print message if the child is not active
+        printf("C%d was not active - it cannot be terminated\n", child_index + 1);
+    }
 }
 
 
